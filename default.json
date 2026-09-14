@@ -29,7 +29,8 @@
         "topic":"nibe/modbus/"
     },
     "system": {
-        "readonly": true
+        "readonly": true,
+        "docker": false
     },
     "hotwater": {
         "enable_autoluxury": false,

@@ -88,6 +88,16 @@ function requireGraph(){ // force require
 return promise;
 }
 config = requireF(path+'/config.json');
+// Deployment target: container vs bare Raspberry Pi. Decides whether config
+// writes go straight to disk, or bracket themselves with sudo mount remount,rw
+// to get at a read-only SD card. Precedence: NIBEPI_DOCKER, then
+// config.system.docker, else false (bare Pi).
+if(process.env.NIBEPI_DOCKER!==undefined) {
+    let v = String(process.env.NIBEPI_DOCKER).trim().toLowerCase();
+    docker = (v==='1' || v==='true' || v==='yes' || v==='on');
+} else if(config!==undefined && config.system!==undefined && config.system.docker!==undefined) {
+    docker = (config.system.docker===true || String(config.system.docker).toLowerCase()==='true');
+}
 var timer;
 const saveGraph = (data) => {
     const promise = new Promise((resolve,reject) => {
