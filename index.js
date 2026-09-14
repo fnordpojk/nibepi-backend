@@ -516,39 +516,24 @@ const announcment = (msg,cb) => {
         cb(null,false)
     }
 }
-let getTimer = {};
 
 async function reqData (address) {
     async function getDataFseries(address) {
         const promise = new Promise((resolve,reject) => {
         let index = register.findIndex(index => index.register == address);
         if(index!==-1 || (address!==undefined && config.system.testmode===true && address!=="00000")) {
-            getTimer[address] = setTimeout((address,index) => {
-                getTimer[address] = setTimeout((address) => {
-                    nibeEmit.removeAllListeners(address);
-                    reject(new Error('No respond from register ('+address+')'));
-                }, 30000, address);
-                if(register[index]!==undefined || config.system.testmode===true) {
-                    if(register[index]!==undefined) register[index].logset = false;
-                    var data = [];
-                    data[0] = 0xc0;
-                    data[1] = 0x69;
-                    data[2] = 0x02;
-                    data[3] = (address & 0xFF);
-                    data[4] = ((address >> 8) & 0xFF);
-                    data[5] = Calc_CRC(data);
-                    nibeEmit.removeAllListeners(address);
-                    nibeEmit.once(address,(data) => {
-                        clearTimeout(getTimer[data.register]);
-                        resolve(data);
-                    })
-                    core.send({type:"reqData",data:data});
-                } else {
-                    reject(new Error('Register ('+address+') returned no data.'));
-                }
-                
-            }, 7000, address,index);
-            if((register[index]===undefined && config.system.testmode===true) || register[index].logset===undefined || register[index].logset===false) {
+            // One listener and one pair of timers per call, torn down together.
+            // These used to be shared per address -- one timer slot keyed by the
+            // register address, plus removeAllListeners(address) -- so two requests
+            // for the same register cancelled each other's timers and deleted each
+            // other's listeners. A register whose value was arriving perfectly
+            // normally would then reject with "No respond from register". 45001 is
+            // re-requested on every announcement message, so it overlapped with
+            // itself constantly.
+            let settled = false;
+            let retryTimer;
+            let failTimer;
+            const request = () => {
                 var data = [];
                 data[0] = 0xc0;
                 data[1] = 0x69;
@@ -556,16 +541,32 @@ async function reqData (address) {
                 data[3] = (address & 0xFF);
                 data[4] = ((address >> 8) & 0xFF);
                 data[5] = Calc_CRC(data);
-                nibeEmit.once(address,(data) => {
-                    clearTimeout(getTimer[data.register]);
-                    resolve(data);
-                })
                 core.send({type:"reqData",data:data});
-            } else {
-                nibeEmit.once(address,(data) => {
-                    clearTimeout(getTimer[data.register]);
-                    resolve(data);
-                })
+            };
+            const finish = (err,data) => {
+                if(settled===true) return;
+                settled = true;
+                clearTimeout(retryTimer);
+                clearTimeout(failTimer);
+                nibeEmit.removeListener(address,listener);
+                if(err!==null) { reject(err); } else { resolve(data); }
+            };
+            const listener = (data) => { finish(null,data); };
+            nibeEmit.on(address,listener);
+            retryTimer = setTimeout(() => {
+                if(settled===true) return;
+                if(register[index]!==undefined || config.system.testmode===true) {
+                    failTimer = setTimeout(() => {
+                        finish(new Error('No respond from register ('+address+')'));
+                    }, 30000);
+                    if(register[index]!==undefined) register[index].logset = false;
+                    request();
+                } else {
+                    finish(new Error('Register ('+address+') returned no data.'));
+                }
+            }, 7000);
+            if((register[index]===undefined && config.system.testmode===true) || register[index].logset===undefined || register[index].logset===false) {
+                request();
             }
         } else {
             reject(new Error('Register ('+address+') not in database'));
@@ -577,19 +578,25 @@ async function reqData (address) {
         const promise = new Promise((resolve,reject) => {
             let index = register.findIndex(index => index.register == address);
             if(index!==-1 || (address!==undefined && config.system.testmode===true && address!=="00000")) {
-                getTimer[address] = setTimeout((address) => {
-                    nibeEmit.removeAllListeners(address);
-                    reject(new Error('No respond from register ('+address+')'));
-                }, 30000, address);
-                nibeEmit.once(address,(data) => {
-                    resolve(data);
-                    clearTimeout(getTimer[data.register]);
-                });
+                let settled = false;
+                let failTimer;
+                const finish = (err,data) => {
+                    if(settled===true) return;
+                    settled = true;
+                    clearTimeout(failTimer);
+                    nibeEmit.removeListener(address,listener);
+                    if(err!==null) { reject(err); } else { resolve(data); }
+                };
+                const listener = (data) => { finish(null,data); };
+                nibeEmit.on(address,listener);
+                failTimer = setTimeout(() => {
+                    finish(new Error('No respond from register ('+address+')'));
+                }, 30000);
                 core.send({type:"reqData",data:address});
             } else {
                 reject(new Error('Register ('+address+') not in database'));
             }
-            
+
         });
         return promise;
     }
