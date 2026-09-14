@@ -106,7 +106,17 @@ const saveGraph = (data) => {
         
     if(config.system===undefined) config.system = {};
     if(config.log===undefined) config.log = {};
-            if(config.system.readonly===true) {
+            if(docker===true) {
+                // Container: the filesystem is already writable and there is no SD
+                // card to protect, so skip the remount dance entirely. updateConfig
+                // has always done this; saveGraph never did, so every periodic graph
+                // save shelled out to sudo mount and logged a failure.
+                fs.writeFile(path+'/graph.json', JSON.stringify(data,null,2), function(err) {
+                    if(err) return reject(new Error('Error saving graph to disc, write error'));
+                    log(config.log.enable,"Graphs saved",config.log['info'],"Graph");
+                    resolve('Graferna sparade')
+                });
+            } else if(config.system.readonly===true) {
                 exec('sudo mount -o remount,rw /', function(error, stdout, stderr) {
                     if(error) {
                         reject(new Error('Error saving graph, could not set RW mode'));
