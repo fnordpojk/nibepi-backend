@@ -931,7 +931,13 @@ const addRegular = (address) => {
     let regIndex = register.findIndex(regIndex => regIndex.register == address);
     if(register[regIndex]===undefined) return;
     if(register[regIndex]===-1 || (register[regIndex].logset!==undefined && register[regIndex].logset===true)) return;
-    let index = regQueue.findIndex(index => index == getData(address));
+    // getData() builds a fresh array each call, so comparing queue entries to it
+    // with == was reference equality and never matched: every call re-requested
+    // the register and pushed another copy onto regQueue, stretching the
+    // round-robin poll interval for every register in it. Compare by value, the
+    // way removeRegular already does.
+    var stringed = getData(address).toString();
+    let index = regQueue.findIndex(item => item.toString() === stringed);
     if(index===-1) {
         if(address.toString().charAt(0)=="1") {
             log(config.log.enable,`RMU register not added to regular list, Register: ${address}`,config.log['debug'],"Register");
