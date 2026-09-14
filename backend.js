@@ -30,7 +30,7 @@ exec(`sudo chrt -a -f -p 99 ${process.pid}`, function(error, stdout, stderr) {
     }
 
 });*/
-const serialport = require('serialport');
+const { SerialPort } = require('serialport');
 const nack = [0x15];
 const ack = [0x06];
 var myPort;
@@ -51,7 +51,7 @@ process.on('message', (m) => {
     if(m.start===true) {
         if(m.port!==undefined) {
             portName = m.port;
-            myPort = new serialport(portName, 9600);
+            myPort = new SerialPort({ path: portName, baudRate: 9600 });
             myPort.on('open', showPortOpen);
             myPort.on('data', analyzeData);
             myPort.on('close', showPortClose);
