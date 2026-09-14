@@ -44,7 +44,9 @@
         "core": false,
         "debug": false,
         "error": true,
-        "price":false
+        "price":false,
+        "hotwater":false,
+        "fan":false
     },
     "indoor": {
         "enable_s1": false,

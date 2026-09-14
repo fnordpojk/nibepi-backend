@@ -1486,6 +1486,11 @@ const writeLog = (data,plugin,level) => {
     let from = "System";
     if(plugin=="fan") from = "Automatiskt luftflöde";
     if(plugin=="hw") from = "Varmvattenreglering";
+    // The contrib package passes "hotwater" and "price"; "hw" is legacy and is
+    // passed by nothing. Without these the messages were labelled "System",
+    // and config.log[plugin] never matched so they were never written to file.
+    if(plugin=="hotwater") from = "Varmvattenreglering";
+    if(plugin=="price") from = "Elprisreglering";
     if(plugin=="weather") from = "Prognosreglering";
     if(plugin=="diagnostic") from = "Diagnostik";
     if(level=="info" || level=="error") {
