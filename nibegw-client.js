@@ -48,22 +48,26 @@ process.on('message', (m) => {
     
   });
 //start()
-function write(data) {
+// Gateways track a reply target per source ip:port. Opening a fresh socket
+// for every request gives each one a new ephemeral source port, so the
+// gateway's target list grows without bound until it runs out of buffers and
+// stops answering (esphome-nibe logs "New target added <ip>:<port>", then
+// "UDP sendto failed ..., error: 12"). Send from the socket already bound to
+// PORT instead, so the source port never changes.
+function send(data, port) {
     data = Buffer.from(data)
-var client = dgram.createSocket('udp4');
-client.send(data, 0, data.length, 10001, HOST, function(err, bytes) {
-  if (err) throw err;
-  client.close();
-});
+    server.send(data, 0, data.length, port, HOST, function(err, bytes) {
+        if(err!==null && err!==undefined && process.connected===true) {
+            process.send({type:"log",data:'UDP send to '+HOST+':'+port+' failed: '+err.message,level:"error",kind:"NibeGW"});
+        }
+    });
+}
+function write(data) {
+    send(data, 10001);
 }
 function read(data) {
-    data = Buffer.from(data)
-    var client = dgram.createSocket('udp4');
-    client.send(data, 0, data.length, 10000, HOST, function(err, bytes) {
-      if (err) throw err;
-      client.close();
-    });
-    }
+    send(data, 10000);
+}
 function start() {
     server.bind(PORT, "0.0.0.0");
     server.on('listening', function() {
