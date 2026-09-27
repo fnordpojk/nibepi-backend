@@ -793,6 +793,9 @@ function Calc_CRC(data) {
     var calc_checksum = 0;
     for (var i = 0; i < (data[2] + 5); i++)
         calc_checksum ^= data[i];
+    // 0x5C is the bus start byte, so a checksum of 0x5C is sent as 0xC5, as in
+    // openHAB's NibeGW; esphome-nibe drops a request whose checksum lacks it.
+    if (calc_checksum === 0x5C) calc_checksum = 0xC5;
     return calc_checksum;
 }
 const addRegister = (address,logset=false) => {
