@@ -39,7 +39,7 @@ let register = [];
 let mqtt_client;
 let mqtt_subcribers = [];
 let mqttData = {};
-let mqttDiscoverySensors = [];
+let discovery = {components:{}, removed:{}, cleared:false, timer:undefined};
 let red = false;
 let config;
 const regQueue = [];
@@ -1215,7 +1215,7 @@ function startMQTT(host,port,user,pass) {
         reconnectPeriod: 5000,
         connectTimeout: 30 * 1000,
         rejectUnauthorized: false,
-        will: { topic: mqtt_publish_topic, payload: mqtt_client_id + ' disconnected', qos: 1, retain: false }
+        will: { topic: config.mqtt.topic+'status', payload: 'offline', qos: 1, retain: true }
     };
     if(mqtt_username!==undefined) mqtt_Options.username = mqtt_username
     if(mqtt_password!==undefined) mqtt_Options.password = mqtt_password
@@ -1224,6 +1224,10 @@ function startMQTT(host,port,user,pass) {
     mqtt_client.on('connect', function () {
         nibeEmit.emit('fault',{from:"MQTT",message:'MQTT Brokern är ansluten'});
         console.log("MQTT Broker is connected.")
+        mqtt_client.publish(config.mqtt.topic+'status', 'online', {qos:1, retain:true});
+        mqtt_client.subscribe('homeassistant/status');
+        cleanOldDiscovery();
+        scheduleDiscovery();
         resolve(mqtt_client);
     });
     mqtt_client.on('close',function(err){
@@ -1240,72 +1244,123 @@ function startMQTT(host,port,user,pass) {
 })
 }
 //
-async function addMQTTdiscovery(data) {
+// Home Assistant MQTT discovery, device-based: one config message for the pump at
+// homeassistant/device/<id>/config, with one component per polled register.
+// https://www.home-assistant.io/integrations/mqtt/#mqtt-discovery
+function discoveryId() {
+    if(config.system===undefined) config.system = {};
+    if(config.system.id===undefined || config.system.id===0 || config.system.id==="") {
+        config.system.id = require('crypto').randomBytes(5).toString('hex');
+        updateConfig(config);
+    }
+    return 'nibepi_'+config.system.id;
+}
+const discoveryUnits = {
+    '°C': {device_class:'temperature', state_class:'measurement'},
+    'A': {device_class:'current', state_class:'measurement'},
+    'V': {device_class:'voltage', state_class:'measurement'},
+    'W': {device_class:'power', state_class:'measurement'},
+    'kW': {device_class:'power', state_class:'measurement'},
+    'Wh': {device_class:'energy', state_class:'total_increasing'},
+    'kWh': {device_class:'energy', state_class:'total_increasing'},
+    'Hz': {device_class:'frequency', state_class:'measurement'},
+    '%': {state_class:'measurement'},
+};
+function discoveryComponent(data) {
+    let component = {
+        p: 'sensor',
+        name: data.titel,
+        unique_id: discoveryId()+'_'+data.register,
+        state_topic: config.mqtt.topic+data.register,
+    };
+    // A register with a value map publishes text, which Home Assistant only accepts
+    // from a sensor without a unit or class.
+    let unit = (data.unit || '').trim();
+    if(data.map===undefined && unit!=='') {
+        component.unit_of_measurement = unit;
+        Object.assign(component, discoveryUnits[unit] || {});
+    }
+    return component;
+}
+function scheduleDiscovery() {
+    if(discovery.timer!==undefined) clearTimeout(discovery.timer);
+    discovery.timer = setTimeout(publishDiscovery, 3000);
+}
+function publishDiscovery() {
+    discovery.timer = undefined;
+    if(mqtt_client===undefined || mqtt_client.connected!==true || config.mqtt===undefined) return;
+    if(config.mqtt.discovery!==true) {
+        // The broker may still hold a retained device config from an earlier run.
+        let hasId = config.system!==undefined && config.system.id!==undefined && config.system.id!==0 && config.system.id!=="";
+        if(discovery.cleared!==true && hasId) {
+            publishMQTT('homeassistant/device/'+discoveryId()+'/config','',true);
+            log(config.log.enable,`Removed MQTT Discovery device`,config.log['info'],"MQTT");
+        }
+        discovery.cleared = true;
+        return;
+    }
+    let topic = 'homeassistant/device/'+discoveryId()+'/config';
+    let cmps = {};
+    for (const reg in discovery.removed) cmps[reg] = {p:'sensor'};
+    Object.assign(cmps, discovery.components);
+    if(Object.keys(cmps).length===0) return;
+    let message = {
+        dev: {ids:[discoveryId()], name:'Nibe '+model, mf:'NIBE', mdl:model, sw:String(firmware)},
+        o: {name:'NibePi', sw:nibepi_version, url:'https://github.com/fnordpojk/nibepi-backend'},
+        avty_t: config.mqtt.topic+'status',
+        cmps: cmps,
+    };
+    publishMQTTpromise(topic,JSON.stringify(message),true).then(() => {
+        discovery.cleared = false;
+        discovery.removed = {};
+        log(config.log.enable,`Published MQTT Discovery device, ${Object.keys(discovery.components).length} sensors`,config.log['info'],"MQTT");
+    },(error => {}));
+}
+function addMQTTdiscovery(data) {
     if(config.mqtt===undefined) {
         config.mqtt = {};
         updateConfig(config);
     }
-    if(config.mqtt.discovery===true) {
-        let i = mqttDiscoverySensors.findIndex(i => i == data.register);
-        let j = config.registers.findIndex(j => j == data.register);
-        if(i===-1 && j!==-1) {
-            let result = await formatMQTTdiscovery(data)
-            let topic = 'homeassistant/'+result.component+'/'+data.register+'/config'
-            let message = JSON.stringify({"name": "Nibe "+data.titel,"device_class":result.type,"unit_of_measurement":result.unit,"state_topic":result.topic});
-            if(result.component!==undefined) {
-                publishMQTTpromise(topic,message,true).then(result => {
-                    log(config.log.enable,`Adding MQTT Discovery object, register ${data.register}`,config.log['info'],"MQTT");
-                    mqttDiscoverySensors.push(data.register);
-                },(error => {
-
-                }));
-            }
-            
-        } else {
-    
+    if(config.mqtt.discovery!==true) {
+        if(discovery.cleared!==true) {
+            discovery.components = {};
+            if(discovery.timer===undefined) scheduleDiscovery();
         }
-    } else {
-        removeMQTTdiscovery(data);
+        return;
     }
+    if(discovery.components[data.register]!==undefined) return;
+    if(config.registers.findIndex(j => j == data.register)===-1) return;
+    discovery.components[data.register] = discoveryComponent(data);
+    delete discovery.removed[data.register];
+    scheduleDiscovery();
 }
-async function removeMQTTdiscovery(data) {
-    let i = mqttDiscoverySensors.findIndex(i => i == data.register);
-    if(i!==-1) {
-        let result = await formatMQTTdiscovery(data)
-        let topic = 'homeassistant/'+result.component+'/'+data.register+'/config'
-        let message = "";
-        publishMQTTpromise(topic,message,true).then(result => {
-            let i = mqttDiscoverySensors.findIndex(i => i == data.register);
-            if(i!==-1) mqttDiscoverySensors.splice(i,1);
-            log(config.log.enable,`Removed MQTT Discovery object, register ${data.register}`,config.log['info'],"MQTT");
-        },(error => {
-
-        }));
-    }
+function removeMQTTdiscovery(data) {
+    if(data===undefined || discovery.components[data.register]===undefined) return;
+    delete discovery.components[data.register];
+    discovery.removed[data.register] = true;
+    scheduleDiscovery();
 }
-function formatMQTTdiscovery(data) {
-    const promise = new Promise((resolve,reject) => {
-        let result = {}
-        result.unit = data.unit;
-        result.component = "sensor";
-        result.topic = config.mqtt.topic+data.register;
-        if(result.unit=="°C") {
-            result.type = "temperature";
-        } else if(result.unit=="A") {
-            result.type = "power";
-        } else if(result.unit=="kW") {
-            result.type = "power";
-        } else if(result.unit=="Hz" || result.unit=="%") {
-            result.type = undefined;
-        } else if(result.unit=="") {
-            result.type = undefined;
-            result.unit = undefined;
-        } else {
-            
+// Earlier versions published one retained config per register, without a unique_id,
+// at homeassistant/sensor/<register>/config. Clear the ones pointing at our topics.
+function cleanOldDiscovery() {
+    if(discovery.cleaning===true) return;
+    discovery.cleaning = true;
+    mqtt_client.subscribe('homeassistant/sensor/+/config');
+    setTimeout(() => {
+        if(mqtt_client!==undefined) mqtt_client.unsubscribe('homeassistant/sensor/+/config');
+        discovery.cleaning = false;
+    }, 10000);
+}
+function clearOldDiscovery(topic,message) {
+    let match = topic.match(/^homeassistant\/sensor\/(\d+)\/config$/);
+    if(match===null || message.length===0) return;
+    try {
+        let old = JSON.parse(message.toString());
+        if(old.state_topic===config.mqtt.topic+match[1] && old.unique_id===undefined) {
+            publishMQTT(topic,'',true);
+            log(config.log.enable,`Cleared old MQTT Discovery object, register ${match[1]}`,config.log['info'],"MQTT");
         }
-        resolve(result)
-    });
-    return promise;
+    } catch(e) {}
 }
 const handleMQTT = (on,host,port,user,pass,cb) => {
     if(on===undefined || on=="" || on=="false" || on===false) {
@@ -1332,6 +1387,14 @@ const handleMQTT = (on,host,port,user,pass,cb) => {
         updateSensors(config);
         if(mqtt_client!==undefined && mqtt_client.connected===true) {
             mqtt_client.on('message', function (topic, message) {
+                if(topic==='homeassistant/status') {
+                    if(message.toString()==='online') scheduleDiscovery();
+                    return;
+                }
+                if(topic.startsWith('homeassistant/sensor/')) {
+                    clearOldDiscovery(topic,message);
+                    return;
+                }
                 let subTopic = config.mqtt.topic;
                 let subscribed = false;
                 for (const arr of mqtt_subcribers) {
