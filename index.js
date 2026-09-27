@@ -29,10 +29,6 @@ const startNibeGW = Core.startNibeGW;
 const stopCore = require(__dirname+'/lib/stopCore');
 var log = require('./log');
 var child = require('child_process');
-const os = require('os').networkInterfaces();
-const crypto = require('crypto')
-const http = require('http');
-let ts_cloud = Date.now();
 var docker = false;
 let exec = child.exec;
 let spawn = child.spawn;
@@ -437,9 +433,7 @@ const announcment = (msg,cb) => {
             console.log(`Nibe ${model} connected`);
             console.log(`Firmware ${firmware}`);
             console.log(`Register is set. Length: ${register.length}`)
-            updateID(model,firmware);
         } catch(err) {
-            //updateID(model,firmware);
             console.log(`Heatpump is not supported ${model}`)
         }
         
@@ -477,12 +471,6 @@ const announcment = (msg,cb) => {
                 console.log(`Firmware ${firmware}`);
                 console.log(`Register is set. Length: ${register.length}`)
             });
-        } else {
-            // Check if ping update to Anerdin cloud should occur
-            if(Date.now()>(ts_cloud+(30*60000))) {
-                ts_cloud = Date.now();
-                updateID(model,firmware);
-            }
         }
     } else if(msg.data[3]==98) {
         //log('info',msg.data)
@@ -1520,68 +1508,6 @@ const writeLog = (data,plugin,level) => {
 }
 const setDocker = (cmd) => {
     docker = cmd;
-}
-const updateID = (model,firmware) => {
-    if(os['wlan0']!==undefined) {
-        sendID('wlan0',model,firmware)
-    } else if(os['eth0']!==undefined) {
-        sendID('eth0',model,firmware)
-    }
-}
-function sendID(dev,model,firmware) {
-    
-    let mac = os[dev][0].mac.substr(os[dev][0].mac.length - 8)
-    let hash = crypto.createHash('md5').update(mac).digest("hex")
-    let shortHash = hash.substr(hash.length - 10)
-    if(config.system!==undefined && (config.system.id===undefined || config.system.id===0)) {
-        config.system.id = shortHash;
-        updateConfig(config);
-    }
-    let version;
-    if(config.update!==undefined) version = config.update.version;
-    const postData = JSON.stringify({
-        id:shortHash,model:model,fw:firmware,version:version
-    });
-    log(config.log.enable,`Posting following information to Anerdins Cloud: ${postData}, `,config.log['debug'],"Cloud");
-    const options = {
-        hostname: 'nibepi.anerdins.se',
-        port: 18081,
-        path: '/',
-        method: 'POST',
-        headers: {
-        'Content-Type': 'application/json',
-        'Content-Length': Buffer.byteLength(postData)
-        }
-    };
-    try {
-        const req = http.request(options, (res) => {
-        // Write data to request body
-        res.on('data', (d) => {
-            process.stdout.write(d+"\n")
-        
-  	})
-
-});
-req.on('socket', function(socket) {
-    socket.setTimeout(5000, function () {   // set short timeout so discovery fails fast
-        //console.log('Timeout connecting to ' + options.hostname);
-        req.abort();    // kill socket
-    });
-    socket.on('error', function (err) { // this catches ECONNREFUSED events
-        //console.log('Connection refused connecting to ' + options.hostname);
-        req.abort();    // kill socket
-    });
-}); // handle connection events and errors
-req.on("error", (err) => {
-    //console.log(err);
-})
-
-	req.write(postData);
-        req.end();
-       }
-       catch (e) {
-        console.log('Error in presentation')
-       }
 }
 module.exports = {
     reqData:reqData,
