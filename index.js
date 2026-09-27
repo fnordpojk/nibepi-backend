@@ -21,7 +21,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
 //const path = __dirname;
-const nibepi_version = "1.2.1"
+const nibepi_version = require('./package.json').version;
 const Core = require(__dirname+'/lib/startCore')
 const startCore = Core.startCoreF;
 const startCoreS = Core.startCoreS;
