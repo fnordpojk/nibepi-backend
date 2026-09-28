@@ -398,19 +398,25 @@ if(config.connection!==undefined && config.connection.series!==undefined) {
 }
 
 
+// Model name and firmware version from a product information message (0x6D).
+const parsePump = (data) => {
+    let modelLength = data[4]+5;
+    let name = (Buffer.from(data).slice(8,modelLength).toString()).split(" ");
+    if(name[0]=="VVM" || name[0]=="SMO" || name[0]=="Tehowatti" || name[0]=="STAR") {
+        name[0] = name[0]+name[1];
+    }
+    name = name[0].split("-");
+    return {model:name[0].replace(",",""), firmware:(data[6]*256)+data[7]};
+}
+let announcedModel;
 const announcment = (msg,cb) => {
     const checkPump = (data,callback) => {
-        let modelLength = data[4]+5;
-        model = (Buffer.from(data).slice(8,modelLength).toString()).split(" ");
-        firmware = (data[6]*256)+data[7];
-        if(model[0]=="VVM" || model[0]=="SMO" || model[0]=="Tehowatti" || model[0]=="STAR") {
-            model[0] = model[0]+model[1];
-        }
-        model = model[0].split("-");
-        model = model[0];
-        model = model.replace(",","");
+        let announced = parsePump(data);
+        model = announced.model;
+        firmware = announced.firmware;
         config.system.pump = model;
         config.system.firmware = firmware;
+        updateConfig(config);
         callback(null);
         }
     if(model=="" && config.system.pump!==undefined && config.system.pump!=="" && config.system.firmware!==undefined && config.system.firmware!=="") {
@@ -471,6 +477,27 @@ const announcment = (msg,cb) => {
                 console.log(`Firmware ${firmware}`);
                 console.log(`Register is set. Length: ${register.length}`)
             });
+        } else {
+            // Model and firmware are cached in config.system and used from there at
+            // start, so a firmware upgrade or a different pump only shows up here.
+            let announced = parsePump(msg.data);
+            if(announced.model!==model) {
+                if(announcedModel!==announced.model) {
+                    announcedModel = announced.model;
+                    let text = `The pump announces itself as ${announced.model}, but the register map loaded is ${model}. Restart NibePi after removing system.pump and system.firmware from config.json.`;
+                    console.log(text);
+                    nibeEmit.emit('fault',{from:"Värmepump",message:text});
+                    log(config.log.enable,text,config.log['error'],"Pump");
+                }
+            } else if(announced.firmware!==Number(firmware)) {
+                let text = `Pump firmware changed from ${firmware} to ${announced.firmware}`;
+                firmware = announced.firmware;
+                config.system.firmware = firmware;
+                updateConfig(config);
+                console.log(text);
+                log(config.log.enable,text,config.log['info'],"Pump");
+                scheduleDiscovery();
+            }
         }
     } else if(msg.data[3]==98) {
         //log('info',msg.data)
