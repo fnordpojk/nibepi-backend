@@ -84,6 +84,14 @@ function requireGraph(){ // force require
 return promise;
 }
 config = requireF(path+'/config.json');
+// Mark where each run starts and ends, so the log can be read from a restart.
+// Written whenever file logging is on, whatever the categories. The stop line
+// relies on log.js writing synchronously: nothing asynchronous runs on 'exit'.
+const logEnabled = () => config!==undefined && config.log!==undefined && config.log.enable===true;
+log(logEnabled(),`NibePi ${nibepi_version} starting`,true,"System");
+process.on('exit', (code) => {
+    log(logEnabled(),`NibePi stopping (exit code ${code})`,true,"System");
+});
 // Deployment target: container vs bare Raspberry Pi. Decides whether config
 // writes go straight to disk, or bracket themselves with sudo mount remount,rw
 // to get at a read-only SD card. Precedence: NIBEPI_DOCKER, then

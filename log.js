@@ -6,29 +6,30 @@ const PREV_FILE = LOG_FILE + '.1';
 // tmpfs on a bare Pi, so this is RAM there - keep it modest.
 const MAX_BYTES = 5 * 1024 * 1024;
 
-let writer = null;
+let fd = null;
 let size = 0;
 
-// Opened for append, not truncate. createWriteStream defaults to 'w', so the
-// log used to be wiped on every process start: a container restart - a Docker
+// Opened for append, not truncate: the log used to be opened with the default
+// 'w' and wiped on every process start, so a container restart - a Docker
 // package update is enough - silently destroyed the history. Rotation is what
 // bounds the file now, not restarts.
+//
+// Lines are written synchronously to the descriptor. A write stream buffers them
+// and flushes later, so whatever was pending when the process exited - the
+// lines explaining why it stopped, and the stop itself - was lost.
 function open(flags) {
     try {
-        size = flags === 'a' && fs.existsSync(LOG_FILE) ? fs.statSync(LOG_FILE).size : 0;
-        writer = fs.createWriteStream(LOG_FILE, { flags: flags });
-        // Without this an EACCES or ENOSPC would surface as an unhandled
-        // 'error' event and take the controller down with it.
-        writer.on('error', () => { writer = null; });
+        fd = fs.openSync(LOG_FILE, flags);
+        size = fs.fstatSync(fd).size;
     } catch (e) {
-        writer = null;
+        fd = null;
         size = 0;
     }
 }
 
 function rotate() {
-    try { if (writer) writer.end(); } catch (e) { /* ignore */ }
-    writer = null;
+    try { if (fd !== null) fs.closeSync(fd); } catch (e) { /* ignore */ }
+    fd = null;
     let renamed = false;
     try { fs.renameSync(LOG_FILE, PREV_FILE); renamed = true; } catch (e) { renamed = false; }
     // If the rename failed - read-only filesystem, no space - truncate instead.
@@ -46,11 +47,17 @@ const log = (enable,data,enabled,kind) => {
         const line = `${time} ${kind}: [${data}]\n`;
         const bytes = Buffer.byteLength(line);
         if (size + bytes > MAX_BYTES) rotate();
-        if (writer) {
-            writer.write(line);
-            size += bytes;
+        if (fd !== null) {
+            // EACCES or ENOSPC must not take the controller down over a log line.
+            try {
+                fs.writeSync(fd, line);
+                size += bytes;
+            } catch (e) {
+                try { fs.closeSync(fd); } catch (e2) { /* ignore */ }
+                fd = null;
+            }
         }
-}
+    }
 }
 
 module.exports = log;
