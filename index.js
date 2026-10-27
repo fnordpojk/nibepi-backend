@@ -222,9 +222,9 @@ if(config.connection!==undefined && config.connection.series!==undefined) {
                                 if(config.tcp!==undefined && config.tcp.pump!==undefined) {
                                     let reg = require(`./models/${config.tcp.pump}.json`);
                                     if(reg!==undefined) {
-                                        for (i = 0; i < reg.length; i = i + 1) {
+                                        for (let i = 0; i < reg.length; i = i + 1) {
                                             let found = false;
-                                            for (j = 0; j < register.length; j = j + 1) {
+                                            for (let j = 0; j < register.length; j = j + 1) {
                                                 if(register[j].register===reg[i].register) {
                                                     found = true;
                                                 }
@@ -294,9 +294,9 @@ const announcment = (msg,cb) => {
         firmware = config.system.firmware;
         try {
             let reg = require(`./models/${model}.json`);
-            for (i = 0; i < reg.length; i = i + 1) {
+            for (let i = 0; i < reg.length; i = i + 1) {
                 let found = false;
-                for (j = 0; j < register.length; j = j + 1) {
+                for (let j = 0; j < register.length; j = j + 1) {
                     if(register[j].register===reg[i].register) {
                         found = true;
                     }
@@ -330,9 +330,9 @@ const announcment = (msg,cb) => {
             checkPump(msg.data, function(err) { 
                 if(err) throw err;
                 let reg = require(`./models/${model}.json`);
-                for (i = 0; i < reg.length; i = i + 1) {
+                for (let i = 0; i < reg.length; i = i + 1) {
                     let found = false;
-                    for (j = 0; j < register.length; j = j + 1) {
+                    for (let j = 0; j < register.length; j = j + 1) {
                         if(register[j].register===reg[i].register) {
                             found = true;
                         }
@@ -372,10 +372,10 @@ const announcment = (msg,cb) => {
         if(rmu['s'+((-24)+msg.data[2])]===undefined || rmu['s'+((-24)+msg.data[2])]===false) {
             rmu['s'+((-24)+msg.data[2])] = true;
             let reg = require(`./models/RMU40_S${((-24)+msg.data[2])}`);
-            for (i = 0; i < reg.length; i = i + 1) {
+            for (let i = 0; i < reg.length; i = i + 1) {
                 if(msg.rmu===true) { reg[i].mode = "R"; }
                 let found = false;
-                for (j = 0; j < register.length; j = j + 1) {
+                for (let j = 0; j < register.length; j = j + 1) {
                     if(register[j].register===reg[i].register) {
                         found = true;
                     }
@@ -843,7 +843,7 @@ const addRegular = (address) => {
 const removeRegular = (address) => {
     var stringed = getData(address).toString();
     if(core!==undefined && core.connected!==undefined && core.connected===true) {
-    for (i = 0; i < regQueue.length; i = i + 1) {
+    for (let i = 0; i < regQueue.length; i = i + 1) {
         let value = regQueue[i].toString();
         if(stringed===value) {
             regQueue.splice(i,1)
@@ -1016,7 +1016,7 @@ const decodeMessage = (buf) => {
             var map = register[index].map;
             var valueMap;
             if (map !== undefined) {
-                for (y = 0; y < map.length; y = y + 1) {
+                for (let y = 0; y < map.length; y = y + 1) {
                     var mapValue = Object.values(map[y]);
                     if (Number(Object.keys(map[y])) == data) {
                         valueMap = mapValue[0];
@@ -1255,8 +1255,8 @@ const handleMQTT = (on,host,port,user,pass,cb) => {
         }
         return cb(null,false)
     };
-    if(host===undefined || host=="") return cb(err = new Error('No MQTT host defined'));
-    if(port===undefined || port=="") return cb(err = new Error('No MQTT port defined'));
+    if(host===undefined || host=="") return cb(new Error('No MQTT host defined'));
+    if(port===undefined || port=="") return cb(new Error('No MQTT port defined'));
     if(mqtt_client===undefined || mqtt_client.connected!==true) {
         console.log('Startar MQTT')
         if(startingMQTT===false) {
@@ -1386,7 +1386,7 @@ const updateSensors = (config) => {
     for (const arr of config.home.inside_sensors) {
         if(arr.source=="mqtt") {
             let found = false;
-            for (i = 0; i < mqtt_subcribers.length; i = i + 1) {
+            for (let i = 0; i < mqtt_subcribers.length; i = i + 1) {
                 if(mqtt_subcribers[i]===arr.register) found = true;
             }
             if(found===false) {

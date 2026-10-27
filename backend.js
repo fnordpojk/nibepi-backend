@@ -37,7 +37,7 @@ let checkACK = {};
 process.on('message', (m) => {
     if(m.start===true) {
         if(m.port!==undefined) {
-            portName = m.port;
+            const portName = m.port;
             myPort = new SerialPort({ path: portName, baudRate: 9600 });
             myPort.on('open', showPortOpen);
             myPort.on('data', analyzeData);
@@ -51,7 +51,7 @@ process.on('message', (m) => {
     } else if(m.type=="reqData") {
         if(m.data!==undefined) {
             let found = false;
-            for (i = 0; i < getQueue.length; i = i + 1) {
+            for (let i = 0; i < getQueue.length; i = i + 1) {
                 let address = (getQueue[i][4]*256)+getQueue[i][3];
                 if((m.data[4]*256)+m.data[3]==address) {
                     found = true;
@@ -152,7 +152,7 @@ function analyzeData(data) {
                                 if(startReset===false) {
                                     result = Array.from(result);
                                     let doubleFound = false;
-                                    for (i = 5; i < result.length - 1; i = i + 1) {
+                                    for (let i = 5; i < result.length - 1; i = i + 1) {
                                         if(result[i]===92 && result[i+1]===92) {
                                             result.splice(i, 1);
                                             result[4] = result[4]-1;
@@ -161,7 +161,7 @@ function analyzeData(data) {
                                     }
                                     if(doubleFound===true) {
                                         var calcChecksum = 0;
-                                        for(i = 2; i < (result[4] + 5); i++) {
+                                        for(let i = 2; i < (result[4] + 5); i++) {
                                             calcChecksum ^= result[i];
                                         }
                                         result[result.length-1] = calcChecksum;
@@ -197,9 +197,9 @@ const checkMessage = (data) => {
         let error = data;
         msgOut = Buffer.alloc(0);
         fs_start = false;
-        msgChecksum = data[data[4]+5];
+        const msgChecksum = data[data[4]+5];
         var calcChecksum = 0;
-        for(i = 2; i < (data[4] + 5); i++) {
+        for(let i = 2; i < (data[4] + 5); i++) {
             calcChecksum ^= data[i];
         }
         if((msgChecksum==calcChecksum) || (msgChecksum==0xC5 && calcChecksum==0x5C)) {
@@ -217,7 +217,7 @@ const makeResponse = (data) => {
         if(data[3]==0x60) { // Send data message
             if(checkACK[data[2]]===false) {
             if(rmuQueue.length!==0) {
-                var lastMsg = rmuQueue.pop();
+                let lastMsg = rmuQueue.pop();
                 if(lastMsg!==undefined) {
                     if(Number(lastMsg.ackback[2])==Number(data[2])) {
                         let address = lastMsg.address;
@@ -289,7 +289,7 @@ const makeResponse = (data) => {
         }
     } else if(data[3]==105 && data[4]==0x00) {
         if(getQueue!==undefined && getQueue.length!==0) {
-            var lastMsg = getQueue.pop();
+            let lastMsg = getQueue.pop();
             
             if(lastMsg!==undefined) {
                 myPort.write(lastMsg);
@@ -321,7 +321,7 @@ const makeResponse = (data) => {
     // Write to heatpump
     } else if(data[3]==107 && data[4]==0x00) {
         if(sendQueue.length!==0) {
-            var lastMsg = sendQueue.pop();
+            let lastMsg = sendQueue.pop();
             if(lastMsg!==undefined) {
                 let address = (lastMsg[4] * 256 + lastMsg[3]);
                 if(process.connected===true) {

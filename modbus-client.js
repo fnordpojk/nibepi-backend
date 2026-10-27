@@ -24,11 +24,12 @@ async function writeData(item) {
             clearTimeout(setTimer[address]);
             console.log(data);
             resolve(data)
+        })
+        .catch(err => {
+            clearTimeout(setTimer[address]);
+            reject(err);
         });
-    }).catch((err => {
-        clearTimeout(getTimer[address]);
-        reject(err)
-    }));
+    });
     return promise;
 }
 async function requestData(address) {
