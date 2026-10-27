@@ -20,15 +20,6 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
-/*var exec = require('child_process').exec;
-exec(`sudo chrt -a -f -p 99 ${process.pid}`, function(error, stdout, stderr) {
-    if(error) {
-        
-    } else {
-        console.log('High priority backend is started')
-    }
-
-});*/
 const { SerialPort } = require('serialport');
 const nack = [0x15];
 const ack = [0x06];

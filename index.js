@@ -806,9 +806,6 @@ const decodeRMU = (buf) => {
         data[60] = 0;
         data[4] = data.length;
         decodeMessage(data);
-        /*
-        if(i===26) address = 10011; 
-        if(i===27) address = 10012;*/
     }
 }
 const addRegular = (address) => {
