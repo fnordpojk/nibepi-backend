@@ -152,7 +152,6 @@ process.on('message', (m) => {
                 }
             })
     } else if(m.type=="red") {
-        //red = m.data;
     }
   });
   process.on('disconnect', (m) => {

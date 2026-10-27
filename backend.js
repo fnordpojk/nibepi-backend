@@ -20,7 +20,6 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
-const version = "1.2";
 /*var exec = require('child_process').exec;
 exec(`sudo chrt -a -f -p 99 ${process.pid}`, function(error, stdout, stderr) {
     if(error) {
@@ -40,11 +39,8 @@ const rmuQueue = [];
 var regQueue = [];
 var regCount = 0;
 var msgOut = Buffer.alloc(0);
-var rmu_buffer = Buffer.alloc(0);
 var red = false;
 var fs_start = false;
-var rmu_start = false;
-let other_start = false;
 var startReset = true;
 let checkACK = {};
 process.on('message', (m) => {
@@ -93,7 +89,6 @@ process.on('message', (m) => {
 
 
 function showPortOpen() {
-    //console.log(`Core started on serial port ${portName}`);
 }
 function showPortClose() {
     console.log('Port closed. Data rate: ' + myPort.baudRate);
@@ -116,10 +111,8 @@ function analyzeData(data) {
     }
     // Sometimes and ACK [0x06] is the first byte, and the second byte is the start. We shift it.
     if(data[0]===0x06 && data[1]===0x5C) {
-        //console.log('ACK')
         data = data.slice(1)
     } else if(data[0]===0x06 && data[1]===undefined) {
-        //console.log('ACK')
     }
     //Check for start message, 0x5C if it's Nibe F series.
     if(fs_start===false) {

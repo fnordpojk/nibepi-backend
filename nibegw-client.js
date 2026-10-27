@@ -47,7 +47,6 @@ process.on('message', (m) => {
       }
     
   });
-//start()
 // Gateways track a reply target per source ip:port. Opening a fresh socket
 // for every request gives each one a new ephemeral source port, so the
 // gateway's target list grows without bound until it runs out of buffers and

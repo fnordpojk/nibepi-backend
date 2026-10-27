@@ -20,7 +20,6 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
-//const path = __dirname;
 const nibepi_version = require('./package.json').version;
 const Core = require(__dirname+'/lib/startCore')
 const startCore = Core.startCoreF;
@@ -28,9 +27,6 @@ const startCoreS = Core.startCoreS;
 const startNibeGW = Core.startNibeGW;
 const stopCore = require(__dirname+'/lib/stopCore');
 var log = require('./log');
-var child = require('child_process');
-let exec = child.exec;
-let spawn = child.spawn;
 let model = "";
 let rmu = {};
 let firmware = "";
@@ -39,7 +35,6 @@ let mqtt_client;
 let mqtt_subcribers = [];
 let mqttData = {};
 let discovery = {components:{}, removed:{}, cleared:false, timer:undefined};
-let red = false;
 let config;
 const regQueue = [];
 const EventEmitter = require('events').EventEmitter
@@ -116,8 +111,6 @@ const updateConfig = (data) => {
         handleMQTT(config.mqtt.enable,config.mqtt.host,config.mqtt.port,config.mqtt.user,config.mqtt.pass, (err,result) => {
             if(err) {
                 return console.log(err);
-            } else {
-
             }
         })
     
@@ -173,8 +166,6 @@ if(config.connection!==undefined && config.connection.series!==undefined) {
                             if(ready===true) {
                                 config.serial.port = port;
                                 cb(null,result);
-                            } else {
-        
                             }
                         });
                         decodeRMU(n);
@@ -204,8 +195,6 @@ if(config.connection!==undefined && config.connection.series!==undefined) {
                             if(ready===true) {
                                 config.serial.port = port;
                                 cb(null,result);
-                            } else {
-        
                             }
                         });
                         decodeMessage(n);
@@ -337,7 +326,6 @@ const announcment = (msg,cb) => {
             }).catch(console.log)
         }
         
-        //console.log(`Announcement message`);
         if(model=="") {
             checkPump(msg.data, function(err) { 
                 if(err) throw err;
@@ -381,7 +369,6 @@ const announcment = (msg,cb) => {
             }
         }
     } else if(msg.data[3]==98) {
-        //log('info',msg.data)
         if(rmu['s'+((-24)+msg.data[2])]===undefined || rmu['s'+((-24)+msg.data[2])]===false) {
             rmu['s'+((-24)+msg.data[2])] = true;
             let reg = require(`./models/RMU40_S${((-24)+msg.data[2])}`);
@@ -587,7 +574,6 @@ function getData(address) {
             
     } else {
         console.log('Register('+address+') not in database');
-        return;
     }
 }
 function setDataValue(incoming) {
@@ -740,7 +726,7 @@ const decodeRMU = (buf) => {
         let data = [];
         let bitData = buf[21];
         let r = {};
-        if(bitData>=128) { bitData = bitData-128; } else {  }
+        if(bitData>=128) { bitData = bitData-128; }
         if(bitData>=64) { bitData = bitData-64; }
         if(bitData>=32) { bitData = bitData-32; r[47393] = 1;} else { r[47393] = 0; } // Inside S2 activated
         if(bitData>=16) { bitData = bitData-16; r[47394] = 1;} else { r[47394] = 0; } // Inside S1 activated
@@ -966,7 +952,6 @@ const decodeMessage = (buf) => {
                     removeRegular(address);
                 }
             } 
-            //log('info',`Register: ${register[index].register} found at index ${index}, ${JSON.stringify(register[index])}`)
             if (register[index].size == "s32") {
                 if (buf[3]===104) {
                     data = buf[i + 2] | buf[i + 3]<<8 | buf[i + 6] <<16 | buf[i + 7] <<24;
@@ -978,7 +963,6 @@ const decodeMessage = (buf) => {
                 }
                 else {
                     data = buf[i + 4] | buf[i + 5] <<8 | buf[i + 2] <<16 | buf[i + 3] <<24;
-                    //data = buf[i + 2] | buf[i + 3] <<8 | buf[i + 4] <<16 | buf[i + 5] <<24;
                     
                     if (data >= 2147483647) {
                         data = (data - 4294967294);
@@ -1013,8 +997,6 @@ const decodeMessage = (buf) => {
                 }
                 else {
                     data = (buf[i + 4] & 0xFF) | (buf[i + 5] & 0xFF) << 8 | (buf[i + 2] & 0xFF) << 16 | (buf[i + 3] & 0xFF) << 24;
-                    //data = (buf[i + 2] & 0xFF) | (buf[i + 3] & 0xFF) << 8 | (buf[i + 4] & 0xFF) << 16 | (buf[i + 5] & 0xFF) << 24;
-                    //data = (buf[i + 2] & 0xFF) << 16 | (buf[i + 3] & 0xFF) << 24 | (buf[i + 4] & 0xFF) | (buf[i + 5] & 0xFF) << 8; Old way
                     data = data>>>0;
                     
                     i = i + 5;
@@ -1089,7 +1071,6 @@ const decodeMessage = (buf) => {
     }
 }
 const getConfig = () => {
-    //nibeEmit.emit('config',config);
     return config;
 }
 const refreshConfig = () => {
@@ -1107,8 +1088,6 @@ function startMQTT(host,port,user,pass) {
     if(pass=="") pass = undefined;
     var mqtt_host = host;
     var mqtt_port = port;
-    var mqtt_subscribe_topic = 'nibe';
-    var mqtt_publish_topic = 'nibe';
     var mqtt_username = user;
     var mqtt_password = pass;
     var mqtt_client_id = 'nibe_' + Math.random().toString(16);
@@ -1287,7 +1266,6 @@ const handleMQTT = (on,host,port,user,pass,cb) => {
             startingMQTT = true;
     startMQTT(host,port,user,pass).then(result => {
         startingMQTT = false
-        //mqtt_client = result;
         config.mqtt.host = host;
         config.mqtt.port = port;
         config.mqtt.enable = true;
@@ -1353,7 +1331,6 @@ const handleMQTT = (on,host,port,user,pass,cb) => {
                         removeRegister(topic[0])
                     }
                 }
-                //console.log('Incoming MQTT message:', topic, message.toString());
             });
         }
         cb(null,true);
@@ -1474,8 +1451,6 @@ const writeLog = (data,plugin,level) => {
     if(config.log[plugin]!==undefined) {
         log(config.log.enable,data,config.log[plugin],from);
     }
-    
-    return;
 }
 module.exports = {
     reqData:reqData,
