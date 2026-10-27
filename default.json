@@ -28,10 +28,7 @@
         "pass":"",
         "topic":"nibe/modbus/"
     },
-    "system": {
-        "readonly": true,
-        "docker": false
-    },
+    "system": {},
     "hotwater": {
         "enable_autoluxury": false,
         "diff": 20,

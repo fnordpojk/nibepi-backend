@@ -29,7 +29,6 @@ const startNibeGW = Core.startNibeGW;
 const stopCore = require(__dirname+'/lib/stopCore');
 var log = require('./log');
 var child = require('child_process');
-var docker = false;
 let exec = child.exec;
 let spawn = child.spawn;
 let model = "";
@@ -47,16 +46,15 @@ const EventEmitter = require('events').EventEmitter
 const nibeEmit = new EventEmitter();
 const fs = require('fs');
 const path = "/etc/nibepi"
+// Normally provided by the container's volume or the install, writable by the
+// user NibePi runs as.
 if (!fs.existsSync(path)) {
-    exec(`sudo mount -o remount,rw / && sudo mkdir ${path} && sudo chown ${process.env.USER}:${process.env.USER} ${path}`, function(error, stdout, stderr) {
-        if(error) {
-            exec(`mkdir ${path} && chown ${process.env.USER}:${process.env.USER} ${path}`, function(error, stdout, stderr) {
-                if(error) {console.log('Error creating config directory')} else { console.log('Created config directory')}
-            });
-        } else {
-            console.log(`Configuration directory created ${path}`);
-        }
-    });
+    try {
+        fs.mkdirSync(path, {recursive:true});
+        console.log(`Configuration directory created ${path}`);
+    } catch (e) {
+        console.log(`Error creating config directory ${path}: ${e.message}`);
+    }
 }
 
 function requireF(modulePath){ // force require
@@ -92,16 +90,6 @@ log(logEnabled(),`NibePi ${nibepi_version} starting`,true,"System");
 process.on('exit', (code) => {
     log(logEnabled(),`NibePi stopping (exit code ${code})`,true,"System");
 });
-// Deployment target: container vs bare Raspberry Pi. Decides whether config
-// writes go straight to disk, or bracket themselves with sudo mount remount,rw
-// to get at a read-only SD card. Precedence: NIBEPI_DOCKER, then
-// config.system.docker, else false (bare Pi).
-if(process.env.NIBEPI_DOCKER!==undefined) {
-    let v = String(process.env.NIBEPI_DOCKER).trim().toLowerCase();
-    docker = (v==='1' || v==='true' || v==='yes' || v==='on');
-} else if(config!==undefined && config.system!==undefined && config.system.docker!==undefined) {
-    docker = (config.system.docker===true || String(config.system.docker).toLowerCase()==='true');
-}
 var timer;
 const saveGraph = (data) => {
     const promise = new Promise((resolve,reject) => {
@@ -110,55 +98,11 @@ const saveGraph = (data) => {
         
     if(config.system===undefined) config.system = {};
     if(config.log===undefined) config.log = {};
-            if(docker===true) {
-                // Container: the filesystem is already writable and there is no SD
-                // card to protect, so skip the remount dance entirely. updateConfig
-                // has always done this; saveGraph never did, so every periodic graph
-                // save shelled out to sudo mount and logged a failure.
-                fs.writeFile(path+'/graph.json', JSON.stringify(data,null,2), function(err) {
-                    if(err) return reject(new Error('Error saving graph to disc, write error'));
-                    log(config.log.enable,"Graphs saved",config.log['info'],"Graph");
-                    resolve('Graferna sparade')
-                });
-            } else if(config.system.readonly===true) {
-                exec('sudo mount -o remount,rw /', function(error, stdout, stderr) {
-                    if(error) {
-                        reject(new Error('Error saving graph, could not set RW mode'));
-                    } else {
-                        fs.writeFile(path+'/graph.json', JSON.stringify(data,null,2), function(err) {
-                            if(err) reject(new Error('Error saving graph to disc, write error'));
-                            log(config.log.enable,"Graphs saved",config.log['info'],"Graph");
-                            nibeEmit.emit('fault',{from:"Grafer",message:'Graferna är sparade till SD-kort'});
-                            resolve('Graferna sparade till SD-kort')
-                            exec('sudo mount -o remount,ro /', function(error, stdout, stderr) {
-                                if(error) {
-                                    nibeEmit.emit('fault',{from:"Grafer",message:'Kunde inte sätta läsbart läge på filsystemet.'});
-                                    
-                                    reject(new Error('Error setting read-only mode after saving graph'));
-                                } else {
-                                    console.log('Read only mode set.')
-                                    resolve('Graferna är sparade till SD-kort och läsbart läge aktivt')
-                                }
-                            })
-                            
-                        }); 
-                    }
-                });
-            } else {
-                exec('sudo mount -o remount,rw /', function(error, stdout, stderr) {
-                    if(error) {
-                        log(config.log.enable,"Could not open the system for write mode",config.log['error'],"Config");
-                        reject(new Error('Error saving graph, could not set RW mode'));
-                    } else {
-                        fs.writeFile(path+'/graph.json', JSON.stringify(data,null,2), function(err) {
-                            if(err) reject(new Error('Error saving graph to disc, write error'));
-                            nibeEmit.emit('fault',{from:"Grafer",message:'Graferna är sparade till SD-kort'});
-                            resolve('Graferna sparade till SD-kort')
-                        }); 
-                    }
-                });
-                
-            }
+            fs.writeFile(path+'/graph.json', JSON.stringify(data,null,2), function(err) {
+                if(err) return reject(new Error('Error saving graph to disc, write error'));
+                log(config.log.enable,"Graphs saved",config.log['info'],"Graph");
+                resolve('Graferna sparade')
+            });
         });
         return promise;
 }
@@ -191,65 +135,16 @@ const updateConfig = (data) => {
             if(JSON.stringify(data).length>2) {
                 if(config.system===undefined) config.system = {};
                 if(config.log===undefined) config.log = {};
-                if(config.system.readonly===true && docker===false) {
-                    exec('sudo mount -o remount,rw /', function(error, stdout, stderr) {
-                        if(error) {
-                            log(config.log.enable,"Could not open the system for write mode",config.log['error'],"Config");
-                            return(false);
-                        } else {
-                            
-                            fs.writeFile(path+'/config.json', JSON.stringify(data,null,2), function(err) {
-                                if(err) return (false);
-                                log(config.log.enable,"Config file saved",config.log['info'],"Config");
-                                nibeEmit.emit('fault',{from:"Inställningar",message:'Inställningarna är sparade till SD-kort'});
-                                exec('sudo mount -o remount,ro /', function(error, stdout, stderr) {
-                                    if(error) {
-                                        nibeEmit.emit('fault',{from:"Inställningar",message:'Kunde inte sätta läsbart läge på filsystemet.'});
-                                        log(config.log.enable,"Could not set read-only mode.",config.log['error'],"Config");
-                                        return(false);
-                                    } else {
-                                        console.log('Read only mode set.')
-
-                                        return (true)
-                                    }
-                                })
-                                
-                            }); 
-                        }
-                    });
-                } else {
-                    if(docker===false) {
-                        exec('sudo mount -o remount,rw /', function(error, stdout, stderr) {
-                            if(error) {
-                                log(config.log.enable,error,config.log['error'],"Config");
-                                return(false);
-                            } else {
-                                fs.writeFile(path+'/config.json', JSON.stringify(data,null,2), function(err) {
-                                    if(err) {
-                                        log(config.log.enable,err,config.log['error'],"Config");
-                                        return (false);
-                                    }
-                                    nibeEmit.emit('fault',{from:"Inställningar",message:'Inställningarna är sparade till SD-kort'});
-                                    log(config.log.enable,"Config file saved",config.log['info'],"Config");
-                                    return (true)
-                                }); 
-                            }
-                        });
-                    } else if(docker===true) {
-                        fs.writeFile(path+'/config.json', JSON.stringify(data,null,2), function(err) {
-                            if(err) {
-                                log(config.log.enable,err,config.log['error'],"Config");
-                                return (false);
-                            }
-                            nibeEmit.emit('fault',{from:"Inställningar",message:'Inställningarna är sparade till SD-kort'});
-                            log(config.log.enable,"Config file saved",config.log['info'],"Config");
-                            return (true)
-                        }); 
+                fs.writeFile(path+'/config.json', JSON.stringify(data,null,2), function(err) {
+                    if(err) {
+                        log(config.log.enable,err,config.log['error'],"Config");
+                        return (false);
                     }
-                    
-                    
-                }
-                
+                    nibeEmit.emit('fault',{from:"Inställningar",message:'Inställningarna är sparade till SD-kort'});
+                    log(config.log.enable,"Config file saved",config.log['info'],"Config");
+                    return (true)
+                });
+
             }
         }, 5000);
     }
@@ -263,28 +158,6 @@ const resetCore = () => {
 }
 const initiateCore = (host,port,cb) => {
     if(config.log===undefined) config.log = {};
-    if(docker===false) {
-        if(config.system.readonly===true) {
-            exec('sudo mount -o remount,ro /', function(error, stdout, stderr) {
-                if(error) {
-                    log(config.log.enable,"Could not set read-only mode at startup.",config.log['error'],"Startup");
-                    return(false);
-                } else {
-                    console.log('Read only mode set.')
-                    return (true)
-                }
-            })
-        } else {
-            exec('sudo mount -o remount,rw /', function(error, stdout, stderr) {
-                if(error) {
-                    log(config.log.enable,"Could not set write mode at startup.",config.log['error'],"Startup");
-                    return(false);
-                } else {
-                    return (true)
-                }
-            })
-        }
-    }
 
 if(config.connection!==undefined && config.connection.series!==undefined) {
     if(config.connection.series=="fSeries") {
@@ -1604,9 +1477,6 @@ const writeLog = (data,plugin,level) => {
     
     return;
 }
-const setDocker = (cmd) => {
-    docker = cmd;
-}
 module.exports = {
     reqData:reqData,
     setData:setData,
@@ -1627,6 +1497,5 @@ module.exports = {
     log:writeLog,
     saveGraph:saveGraph,
     requireGraph:requireGraph,
-    setDocker:setDocker,
     refreshConfig:refreshConfig
 }

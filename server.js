@@ -12,10 +12,6 @@ process.on('exit', function(code) {
   });
   console.log('Waiting for the core to initiate...')
     let config = nibe.getConfig();
-    if(config.system.readonly!==false) {
-        config.system.readonly=false
-        nibe.setConfig(config);
-    }
     if(config.home!==undefined) {
         config.home=undefined;
         nibe.setConfig(config);
@@ -32,7 +28,6 @@ process.on('exit', function(code) {
         config.fan=undefined;
         nibe.setConfig(config);
     }
-    nibe.setDocker(true);
     if(config.connection!==undefined) {
         if(config.connection.enable=="serial") {
             if(config.serial!==undefined && config.serial.port!==undefined && config.serial.port!=="") {

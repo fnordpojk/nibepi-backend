@@ -75,11 +75,10 @@ State lives in `/etc/nibepi`:
 
 `default.json` in this repo is the template used when no config exists yet.
 
-**`NIBEPI_DOCKER`** — set it to `1` when running in a container. Without it the
-core assumes a bare Raspberry Pi with a read-only root filesystem and brackets
-every config write in `sudo mount -o remount,rw /`. In a container that fails
-and the write is lost silently. It can also be set as `system.docker` in the
-config; the environment variable wins.
+The directory must exist and be writable by the user NibePi runs as. NibePi no
+longer remounts the root filesystem: earlier versions assumed a read-only SD
+card and bracketed every write in `sudo mount -o remount`, so `NIBEPI_DOCKER`
+and the `system.readonly` and `system.docker` settings are gone.
 
 ## Enabling Modbus in the pump
 
