@@ -77,6 +77,8 @@ function requireGraph(){ // force require
 return promise;
 }
 config = requireF(path+'/config.json');
+if(config.update===undefined) config.update = {};
+config.update.version = nibepi_version;
 // Mark where each run starts and ends, so the log can be read from a restart.
 // Written whenever file logging is on, whatever the categories. The stop line
 // relies on log.js writing synchronously: nothing asynchronous runs on 'exit'.
