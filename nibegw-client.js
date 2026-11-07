@@ -34,6 +34,12 @@ process.on('message', (m) => {
         ;
     } else if(m.type=="setData") {
         sendQueue.push(m.data);
+    } else if(m.type=="rmuSet") {
+        // index.js keeps RMU40 read-only through NibeGW, so this should not
+        // happen; if it does, say so instead of dropping the value.
+        if(process.connected===true) {
+            process.send({type:"log",data:`RMU40 value for register ${m.data.address} not sent: NibeGW cannot send RMU40 values`,level:"error",kind:"NibeGW"});
+        }
     } else if(m.type=="regRegister") {
         regQueue = m.data;
     } else if(m.type=="red") {

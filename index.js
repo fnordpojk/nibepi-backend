@@ -373,9 +373,14 @@ const announcment = (msg,cb) => {
     } else if(msg.data[3]==98) {
         if(rmu['s'+((-24)+msg.data[2])]===undefined || rmu['s'+((-24)+msg.data[2])]===false) {
             rmu['s'+((-24)+msg.data[2])] = true;
+            // The pump wants an RMU40's answer within milliseconds of its
+            // token. Only a serial connection can give it; through NibeGW the
+            // values could be read but never reach the pump.
+            const viaGateway = config.connection!==undefined && config.connection.enable=="nibegw";
+            const readOnly = msg.rmu===true || viaGateway;
             let reg = require(`./models/RMU40_S${((-24)+msg.data[2])}`);
             for (let i = 0; i < reg.length; i = i + 1) {
-                if(msg.rmu===true) { reg[i].mode = "R"; }
+                if(readOnly) { reg[i].mode = "R"; }
                 let found = false;
                 for (let j = 0; j < register.length; j = j + 1) {
                     if(register[j].register===reg[i].register) {
@@ -386,7 +391,9 @@ const announcment = (msg,cb) => {
                     register.push(reg[i])
                 }
             }
-            if(msg.rmu===true) {
+            if(viaGateway) {
+                console.log('RMU40 System '+((-24)+msg.data[2])+' seen through NibeGW (read-only mode): values such as BT50 cannot be sent to the pump through NibeGW.');
+            } else if(readOnly) {
                 console.log('RMU40 System '+((-24)+msg.data[2])+' connected (read-only mode)');
             } else {
                 console.log('RMU40 System '+((-24)+msg.data[2])+' connected');
