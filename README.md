@@ -40,6 +40,57 @@ esphome-nibe, `read_port` and `write_port` must be `10000` and `10001`, and the
 host running NibePi must appear in its `source:` list, or its requests are
 dropped without a reply.
 
+### RMU40 through NibeGW
+
+NibePi can act as an RMU40 room unit, sending the pump a room temperature from
+any sensor it knows. The pump wants a room unit's answer within milliseconds
+of asking, which NibePi can give over a serial connection but not over UDP. So
+through NibeGW the gateway answers instead, with frames NibePi sends it ahead
+of time: one UDP port on the gateway per heating system. NibePi sends the room
+temperature every 10 seconds, since the gateway uses each frame once, and a
+command such as Temporary Lux only once. A sensor without a reading is sent as
+"no value", so the pump stops using the last one.
+
+It is off by default. To use it:
+
+1. Activate the RMU40 for the system in the pump (the RMU-40 S1–S3 switches
+   on the dashboard's Inställningar tab do that).
+2. Turn on "RMU-40 through NibeGW" in the same place, and check the UDP port
+   per system: by default 10002–10005 for S1–S4. They are `rmu.gateway` and
+   `rmu.gateway_port_s1`–`rmu.gateway_port_s4` in `config.json`; 10000 and
+   10001 are not allowed, as they are the gateway's read and write ports.
+3. Set the gateway up to answer for that system on the same port. With
+   esphome-nibe, for system 1:
+
+```yaml
+nibegw:
+  udp:
+    read_port: 10000
+    write_port: 10001
+    source:
+      - 192.168.1.10        # the host running NibePi
+    ports:
+      - address: RMU40_S1
+        token: RMU_WRITE
+        port: 10002         # the port set in NibePi for S1
+  acknowledge:
+    - MODBUS40
+    - RMU40_S1
+  constants:
+    - address: RMU40_S1     # the room unit's version
+      token: ACCESSORY
+      data: [0xEE, 0x03, 0x01]
+    - address: RMU40_S1
+      token: RMU_DATA
+      command: RMU_WRITE
+      data: [0x63, 0x00]
+```
+
+Do not also use esphome-nibe's own `climate` room unit for the same system,
+and do not turn this on if a real RMU40 is connected to that system. The
+pump's view of the room temperature shows in NibePi as BT50 (40033 for S1),
+from its own messages to the room unit.
+
 ## Supported pumps
 
 Register maps ship for:

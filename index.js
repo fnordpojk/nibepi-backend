@@ -79,6 +79,14 @@ return promise;
 config = requireF(path+'/config.json');
 if(config.update===undefined) config.update = {};
 config.update.version = nibepi_version;
+// RMU40 through NibeGW is off unless the gateway is set up to answer the
+// pump's RMU40 tokens with the frames NibePi sends to it, one UDP port per
+// system.
+if(config.rmu===undefined) config.rmu = {};
+if(config.rmu.gateway===undefined) config.rmu.gateway = false;
+for (let s = 1; s <= 4; s++) {
+    if(config.rmu['gateway_port_s'+s]===undefined) config.rmu['gateway_port_s'+s] = 10001+s;
+}
 // Mark where each run starts and ends, so the log can be read from a restart.
 // Written whenever file logging is on, whatever the categories. The stop line
 // relies on log.js writing synchronously: nothing asynchronous runs on 'exit'.
@@ -117,7 +125,8 @@ const updateConfig = (data) => {
         })
     
     nibeEmit.emit('config',config);
-   
+    applyRmuGateway();
+
     let run = false;
     if(timer!==undefined && timer._idleTimeout>0) {
         clearTimeout(timer);
@@ -150,6 +159,55 @@ const resetCore = () => {
     model = "";
     register = [];
     firmware = "";
+    // The RMU40 registers go with the rest, so a restarted core adds them
+    // again when the pump next talks to the room unit.
+    rmu = {};
+    rmuReal = {};
+    rmuReady = {};
+}
+
+// RMU40 room units. The pump wants a room unit's answer within milliseconds
+// of its token. A serial connection gives it directly; through NibeGW only the
+// gateway can, from frames NibePi sends to it ahead of time (rmu.gateway).
+let rmuReal = {};  // systems where a real RMU40 answers the pump
+let rmuReady = {}; // systems announced to the nodes as writable
+const viaGateway = () => config.connection!==undefined && config.connection.enable=="nibegw";
+const rmuGatewayOn = () => viaGateway() && config.rmu!==undefined && config.rmu.gateway===true;
+const rmuWritable = (system) => rmuReal[system]!==true && (!viaGateway() || rmuGatewayOn());
+// UDP port on the gateway per RMU40 address (0x19-0x1C). 10000 and 10001 are
+// the gateway's read and write ports, where an RMU40 frame would be taken for
+// a register request.
+const rmuGatewayPorts = () => {
+    const ports = {};
+    for (let s = 1; s <= 4; s++) {
+        const port = Number(config.rmu===undefined ? undefined : config.rmu['gateway_port_s'+s]);
+        if(Number.isInteger(port) && port>0 && port<65536 && port!==10000 && port!==10001) {
+            ports[0x18+s] = port;
+        }
+    }
+    return ports;
+}
+// Brings the RMU40 registers, the gateway client and the nodes in line with
+// the config. Runs when an RMU40 system is first seen and on every config
+// change, so the dashboard switch takes effect at once.
+const applyRmuGateway = () => {
+    for (const system of Object.keys(rmu)) {
+        if(rmu[system]!==true) continue;
+        const writable = rmuWritable(system);
+        for (const entry of require(`./models/RMU40_${system.toUpperCase()}`)) {
+            const reg = register.find(r => r.register===entry.register);
+            if(reg!==undefined) reg.mode = (entry.mode=="R/W" && writable) ? "R/W" : "R";
+        }
+        if(writable && rmuReady[system]!==true) {
+            rmuReady[system] = true;
+            nibeEmit.emit('rmu_ready',system);
+        } else if(!writable) {
+            rmuReady[system] = false;
+        }
+    }
+    if(viaGateway() && core!==undefined && core.connected===true) {
+        core.send({type:"rmuGateway",data:{enable:rmuGatewayOn(),ports:rmuGatewayPorts()}});
+    }
 }
 const initiateCore = (host,port,cb) => {
     if(config.log===undefined) config.log = {};
@@ -188,7 +246,8 @@ if(config.connection!==undefined && config.connection.series!==undefined) {
         } else if(config.connection.enable=="nibegw") {
             startNibeGW(port).then(result => {
                 core = result;
-                
+                applyRmuGateway();
+
                 core.on('message', (m) => {
                     if(m.type=="data") {
                         let n = m.data;
@@ -199,6 +258,9 @@ if(config.connection!==undefined && config.connection.series!==undefined) {
                                 cb(null,result);
                             }
                         });
+                        // The gateway passes on the pump's messages to the room
+                        // units too, so their values can be read as over serial.
+                        decodeRMU(n);
                         decodeMessage(n);
                     } else if(m.type=="fault") {
                         nibeEmit.emit('fault',m.data);
@@ -371,16 +433,14 @@ const announcment = (msg,cb) => {
             }
         }
     } else if(msg.data[3]==98) {
-        if(rmu['s'+((-24)+msg.data[2])]===undefined || rmu['s'+((-24)+msg.data[2])]===false) {
-            rmu['s'+((-24)+msg.data[2])] = true;
-            // The pump wants an RMU40's answer within milliseconds of its
-            // token. Only a serial connection can give it; through NibeGW the
-            // values could be read but never reach the pump.
-            const viaGateway = config.connection!==undefined && config.connection.enable=="nibegw";
-            const readOnly = msg.rmu===true || viaGateway;
-            let reg = require(`./models/RMU40_S${((-24)+msg.data[2])}`);
+        const n = (-24)+msg.data[2];
+        if(rmu['s'+n]===undefined || rmu['s'+n]===false) {
+            rmu['s'+n] = true;
+            if(msg.rmu===true) rmuReal['s'+n] = true;
+            // Copies, so the model keeps its own modes: applyRmuGateway sets
+            // each register's mode from them.
+            let reg = require(`./models/RMU40_S${n}`);
             for (let i = 0; i < reg.length; i = i + 1) {
-                if(readOnly) { reg[i].mode = "R"; }
                 let found = false;
                 for (let j = 0; j < register.length; j = j + 1) {
                     if(register[j].register===reg[i].register) {
@@ -388,18 +448,20 @@ const announcment = (msg,cb) => {
                     }
                 }
                 if(found===false) {
-                    register.push(reg[i])
+                    register.push(Object.assign({}, reg[i]))
                 }
             }
-            if(viaGateway) {
-                console.log('RMU40 System '+((-24)+msg.data[2])+' seen through NibeGW (read-only mode): values such as BT50 cannot be sent to the pump through NibeGW.');
-            } else if(readOnly) {
-                console.log('RMU40 System '+((-24)+msg.data[2])+' connected (read-only mode)');
+            if(msg.rmu===true) {
+                console.log('RMU40 System '+n+' connected (read-only mode)');
+            } else if(rmuGatewayOn()) {
+                const port = rmuGatewayPorts()[msg.data[2]];
+                console.log('RMU40 System '+n+' connected through NibeGW, '+(port!==undefined ? 'UDP port '+port : 'but its UDP port is not set or not allowed'));
+            } else if(viaGateway()) {
+                console.log('RMU40 System '+n+' seen through NibeGW (read-only mode): turn on RMU40 through NibeGW, and set the gateway up for it, to send values such as BT50 to the pump.');
             } else {
-                console.log('RMU40 System '+((-24)+msg.data[2])+' connected');
-                // EMIT HERE
-                nibeEmit.emit('rmu_ready','s'+((-24)+msg.data[2]));
+                console.log('RMU40 System '+n+' connected');
             }
+            applyRmuGateway();
             console.log(`Register is set. Length: ${register.length}`)
             cb(null,false)
 
@@ -594,8 +656,12 @@ function setDataValue(incoming) {
             var min = Number(item.min);
             var max = Number(item.max);
             var corruptData;
-            incoming.value = incoming.value*item.factor;
-            if(min!==undefined && max!==undefined) {
+            // No reading for an RMU40 temperature: 0x8000 tells the pump there
+            // is none, so it stops using the last one it was sent.
+            const noValue = item.register.charAt(0)=="1" && item.size=="s16" &&
+                (incoming.value===null || incoming.value===undefined || Number.isNaN(Number(incoming.value)));
+            if(!noValue) incoming.value = incoming.value*item.factor;
+            if(!noValue && min!==undefined && max!==undefined) {
                 if(min!==0 || max!==0) {
                     if(incoming.value>max) {
                         incoming.value = max
@@ -623,13 +689,18 @@ function setDataValue(incoming) {
                     if(item.size=="s8" || item.size=="u8") {
                         rmu.data[4] = (incoming.value & 0xFF);
                         rmu.data[5] = Calc_CRC(rmu.data);
+                    } else if(noValue) {
+                        rmu.noValue = true;
+                        rmu.data[4] = 0x00;
+                        rmu.data[5] = 0x80;
+                        rmu.data[6] = Calc_CRC(rmu.data);
                     } else {
                         let value = incoming.value;
                         if(value>=32768) { value = value-7 } else { value = value+7 }
                         rmu.data[4] = (value & 0xFF);
                         rmu.data[5] = ((value >> 8) & 0xFF);
                         rmu.data[6] = Calc_CRC(rmu.data);
-                    } 
+                    }
                     rmu.ackback[0] = 92;
                     rmu.ackback[1] = 0;
                     rmu.ackback[2] = (Number(item.register.charAt(2))+25);

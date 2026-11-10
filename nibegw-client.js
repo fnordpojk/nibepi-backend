@@ -9,6 +9,32 @@ var red = false;
 var regQueue = [];
 var regCount = 0;
 let checkACK = {};
+// RMU40 through the gateway (rmu.gateway in the config). Each system's frames
+// go to its own UDP port on the gateway, which answers the pump's next RMU40
+// token for that system with them, once each. So the room temperature is sent
+// again every 10 seconds, as esphome-nibe's own room unit does, while a
+// command such as Temporary Lux goes only once.
+let rmuGateway = {enable:false, ports:{}};
+const rmuTemperature = {}; // RMU40 address -> latest temperature frame
+const RMU_TEMPERATURE_INDEX = 6;
+let started = false;
+function sendRmu(address, frame) {
+    const port = rmuGateway.ports[address];
+    if(port===undefined) {
+        if(process.connected===true) {
+            process.send({type:"log",data:`RMU40 System ${address-0x18}: no UDP port on the gateway set for it`,level:"error",kind:"NibeGW"});
+        }
+        return false;
+    }
+    send(frame, port);
+    return true;
+}
+setInterval(() => {
+    if(started!==true || rmuGateway.enable!==true) return;
+    for (const address of Object.keys(rmuTemperature)) {
+        sendRmu(Number(address), rmuTemperature[address]);
+    }
+}, 10000);
 process.on('message', (m) => {
     if(m.start===true) {
         if(m.port!==undefined) {
@@ -34,11 +60,32 @@ process.on('message', (m) => {
         ;
     } else if(m.type=="setData") {
         sendQueue.push(m.data);
+    } else if(m.type=="rmuGateway") {
+        rmuGateway = m.data;
+        if(rmuGateway.enable!==true) {
+            for (const address of Object.keys(rmuTemperature)) delete rmuTemperature[address];
+        }
     } else if(m.type=="rmuSet") {
-        // index.js keeps RMU40 read-only through NibeGW, so this should not
-        // happen; if it does, say so instead of dropping the value.
+        // index.js keeps RMU40 read-only unless the gateway is set up for it,
+        // so this should not happen when it is off; if it does, say so
+        // instead of dropping the value.
+        if(rmuGateway.enable!==true) {
+            if(process.connected===true) {
+                process.send({type:"log",data:`RMU40 value for register ${m.data.address} not sent: RMU40 through NibeGW is off`,level:"error",kind:"NibeGW"});
+            }
+            return;
+        }
+        const address = Number(m.data.ackback[2]);
+        if(!sendRmu(address, m.data.data)) return;
+        const temperature = m.data.data[3]===RMU_TEMPERATURE_INDEX;
+        if(temperature) rmuTemperature[address] = m.data.data;
         if(process.connected===true) {
-            process.send({type:"log",data:`RMU40 value for register ${m.data.address} not sent: NibeGW cannot send RMU40 values`,level:"error",kind:"NibeGW"});
+            process.send({type:"ack",data:{register:m.data.address,ack:true}});
+            process.send({type:"log",data:`Register: ${m.data.address}, Buffer: ${JSON.stringify(m.data.data)}`,level:"core",kind:"RMU SENT"});
+            // Shows the value sent as the register's value, as over serial.
+            if(temperature && m.data.noValue!==true) {
+                process.send({type:"data",data:m.data.ackback});
+            }
         }
     } else if(m.type=="regRegister") {
         regQueue = m.data;
@@ -74,6 +121,7 @@ function read(data) {
     send(data, 10000);
 }
 function start() {
+    started = true;
     server.bind(PORT, "0.0.0.0");
     server.on('listening', function() {
         var address = server.address();

@@ -225,7 +225,7 @@ const makeResponse = (data) => {
                             process.send({type:"ack",data:{register:address,ack:true}});
                             process.send({type:"log",data:`Register: ${address}, Buffer: ${JSON.stringify(lastMsg)}`,level:"core",kind:"RMU SENT"});
                         }
-                        if(lastMsg.data[3]===6) {
+                        if(lastMsg.data[3]===6 && lastMsg.noValue!==true) {
                             if(process.connected===true) {
                                 process.send({type:"data",data:lastMsg.ackback,rmu:checkACK[lastMsg.ackback[2]]});
                                 process.send({type:"log",data:lastMsg,level:"debug",kind:"RMU ACKBACK"});
