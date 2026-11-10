@@ -20,7 +20,7 @@
         "adjust_s2":0
     },
     "mqtt": {
-        "enable":true,
+        "enable":false,
         "host":"127.0.0.1",
         "port":"1883",
         "user":"",
